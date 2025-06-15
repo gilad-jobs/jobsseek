@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Template Editor – Candidate Ranking</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  body{direction:ltr;padding:2rem;}
+  textarea{font-family:monospace;}
+  .badge-edit{cursor:pointer;margin:0 .25rem .25rem 0;}
+  .badge-edit:hover{opacity:.8;}
+</style>
+</head>
+<body>
+
+<h2 class="mb-3">Candidate-Scoring Template Editor</h2>
+<div id="totWrap" class="fw-bold mb-2"></div>
+
+<div class="mb-3">
+  <button id="addCat"  class="btn btn-success btn-sm me-2">＋ Add Category</button>
+  <button id="copyBtn" class="btn btn-primary btn-sm me-2">Copy JSON</button>
+  <button id="applyBtn" class="btn btn-outline-secondary btn-sm">Apply JSON</button>
+  <span id="copyMsg"  class="ms-2 text-success"></span>
+</div>
+
+<div class="alert alert-info py-2">
+  • ניתן להביא תבנית דרך <code>?data=</code> / <code>?data64=</code> או לערוך ידנית למטה וללחוץ <b>Apply JSON</b>.<br>
+  • הוספת מילה / context: הקלידו והקישו פסיק.
+</div>
+
+<div id="tableWrap"></div>
+
+<h5 class="mt-4">Current / Editable JSON</h5>
+<textarea id="jsonOut" class="form-control" rows="8"></textarea>
+
+<script>
+/* -------- default sample -------- */
+let data=[{name:"פלטפורמות פרסום",description:"יכולת עבודה עם פלטפורמות…",weight:0.25,keywords:["Google Ads","Facebook Ads","Meta","Taboola","Outbrain"],inferred_context:["ניהול קמפיינים במכשירים/פלטפורמות מרובות","התמקדות בכלי פרסום דיגיטליים"]},{name:"ניהול קמפיינים בתקציבים גבוהים",description:"ניסיון בניהול קמפיינים…",weight:0.2,keywords:["תקציב גבוה","ניהול קמפיינים","Media Buying","High-budget"],inferred_context:["התייחסות לניהול כספים בקמפיינים","עבודות עם תקציב משמעותי"]},{name:"אופטימיזציה וביצועים",description:"יכולת לשפר ולייעל קמפיינים…",weight:0.2,keywords:["Optimization","performance","ROI","efficiency"],inferred_context:["שיפור מדדים","הפחתת עלויות לאריזת רכישה"]},{name:"קבלת החלטות מבוססת נתונים",description:"יכולת להשתמש בניתוח נתונים…",weight:0.15,keywords:["analytics","data analysis","KPI","metrics"],inferred_context:["דיווחים, מונה ביצועים","ניתוח מגמות מתוך נתונים"]},{name:"תכנון אסטרטגי",description:"יכולת לתכנן ולהגדיר אסטרטגיות…",weight:0.1,keywords:["strategy","planning","market analysis"],inferred_context:["פיתוח אסטרטגיות קמפיין","ניתוח מתחרים ושוק"]}];
+
+/* -------- override via ?data / ?data64 -------- */
+const qs=new URLSearchParams(location.search);
+if(qs.has('data')||qs.has('data64')){
+  try{
+    const raw=qs.has('data')?decodeURIComponent(qs.get('data'))
+      :decodeURIComponent(atob(qs.get('data64').replace(/-/g,'+').replace(/_/g,'/')));
+    const arr=JSON.parse(raw);
+    if(Array.isArray(arr)) data=arr;
+  }catch(e){console.warn('Bad data param',e);}
+}
+
+/* helpers */
+const $=s=>document.querySelector(s);
+const wrap=$('#tableWrap'),out=$('#jsonOut'),tot=$('#totWrap'),msg=$('#copyMsg');
+const sum=()=>data.reduce((s,c)=>s+(+c.weight||0),0).toFixed(2);
+const badges=(a,c)=>a.map((v,i)=>`<span class="badge bg-primary badge-edit ${c}" data-idx="${i}">${v} ⓧ</span>`).join('');
+
+const row= (c,i)=>`<tr data-i="${i}">
+<td>${i+1}</td>
+<td><input class="form-control form-control-sm name" value="${c.name}"></td>
+<td><input type="number" step="0.01" min="0" max="1" class="form-control form-control-sm weight" value="${c.weight}"></td>
+<td>${badges(c.keywords,'kw')}<input class="form-control form-control-sm mt-1 addKw" placeholder="Add keyword…"></td>
+<td>${badges(c.inferred_context,'ctx')}<input class="form-control form-control-sm mt-1 addCtx" placeholder="Add context…"></td>
+<td><button class="btn btn-outline-danger btn-sm del">×</button></td></tr>`;
+
+function render(){
+  tot.innerHTML=`Total Weight: <span class="text-${sum()==1?'success':'danger'}">${sum()}</span>`;
+  wrap.innerHTML=`<table class="table table-bordered align-middle"><thead class="table-light"><tr><th style="width:2.5rem">#</th><th>Name</th><th style="width:110px">Weight</th><th>Keywords</th><th>Inferred Context</th><th style="width:70px"></th></tr></thead><tbody>${data.map(row).join('')}</tbody></table>`;
+  out.value=JSON.stringify(data,null,2); msg.textContent='';
+}
+
+/* table inputs */
+wrap.addEventListener('input',e=>{
+  const tr=e.target.closest('tr'); if(!tr) return; const i=+tr.dataset.i;
+  if(e.target.classList.contains('name'))   data[i].name=e.target.value.trim();
+  if(e.target.classList.contains('weight')) data[i].weight=+e.target.value||0;
+  if(e.target.classList.contains('addKw')){
+    const v=e.target.value.trim(); if(v&&v.endsWith(',')){data[i].keywords.push(v.slice(0,-1));e.target.value='';render();}
+  }
+  if(e.target.classList.contains('addCtx')){
+    const v=e.target.value.trim(); if(v&&v.endsWith(',')){data[i].inferred_context.push(v.slice(0,-1));e.target.value='';render();}
+  }
+  tot.innerHTML=`Total Weight: <span class="text-${sum()==1?'success':'danger'}">${sum()}</span>`;
+  out.value=JSON.stringify(data,null,2);
+});
+
+/* table clicks */
+wrap.addEventListener('click',e=>{
+  const tr=e.target.closest('tr'); if(!tr) return; const i=+tr.dataset.i;
+  if(e.target.classList.contains('kw')) {data[i].keywords.splice(+e.target.dataset.idx,1);render();return;}
+  if(e.target.classList.contains('ctx')){data[i].inferred_context.splice(+e.target.dataset.idx,1);render();return;}
+  if(e.target.classList.contains('del')){if(confirm('Delete?')){data.splice(i,1);render();}}
+});
+
+/* add category */
+$('#addCat').addEventListener('click',()=>{
+  data.push({name:"New Category",description:"",weight:0,keywords:[],inferred_context:[]}); render();
+});
+
+/* copy */
+$('#copyBtn').addEventListener('click',async()=>{
+  try{await navigator.clipboard.writeText(out.value);msg.textContent='Copied!';}catch{msg.textContent='Copy failed';}
+});
+
+/* apply manual JSON */
+$('#applyBtn').addEventListener('click',()=>{
+  try{
+    const arr=JSON.parse(out.value);
+    if(!Array.isArray(arr)) throw 'JSON must be array';
+    data=arr; render();
+  }catch(err){
+    alert('Invalid JSON: '+err);
+  }
+});
+
+render();
+</script>
+</body>
+</html>
