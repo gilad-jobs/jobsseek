@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JSON Category Editor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 20px;
+      background-color: #f9f9f9;
+      color: #333;
+    }
+    h1, h2 {
+      color: #222;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      background-color: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+    }
+    th {
+      background-color: #eee;
+    }
+    input[type="text"], input[type="number"], textarea {
+      width: 100%;
+      padding: 6px;
+      box-sizing: border-box;
+    }
+    .btn {
+      padding: 8px 14px;
+      margin: 10px 5px 10px 0;
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+    }
+    .btn-add {
+      background-color: #28a745;
+      color: white;
+    }
+    .btn-remove {
+      background-color: #dc3545;
+      color: white;
+    }
+    canvas {
+      max-width: 300px;
+      margin: 20px auto;
+      display: block;
+    }
+    #totals {
+      margin-top: 20px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>JSON Category Editor</h1>
+
+  <h2>Paste JSON Here</h2>
+  <textarea id="jsonInput" rows="10" oninput="parseJSON()"></textarea>
+
+  <h2>Visual Editor</h2>
+  <table id="categoryTable">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Description</th>
+        <th>Must Have</th>
+        <th>Weight</th>
+        <th>Sub Criteria</th>
+        <th>Time Sensitive</th>
+        <th>Drives Business Value</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <button class="btn btn-add" onclick="addRow()">Add Category</button>
+
+  <h2>Weight Distribution</h2>
+  <h1 id="jobTitle" style="text-align:center; font-size:24px; margin:10px 0;"></h1>
+  <canvas id="weightChart"></canvas>
+
+  <div id="totals">Total Weight: 0 | Must Have Weight: 0</div>
+
+  <h2>Live JSON Output</h2>
+  <textarea id="jsonOutput" rows="10"></textarea>
+
+  <script>
+    const tableBody = document.querySelector('#categoryTable tbody');
+    const chartCtx = document.getElementById('weightChart').getContext('2d');
+    const jsonInput = document.getElementById('jsonInput');
+    const jsonOutput = document.getElementById('jsonOutput');
+    const totalsDisplay = document.getElementById('totals');
+    const jobTitleDisplay = document.getElementById('jobTitle');
+    let chart;
+
+    function renderTable(data) {
+      tableBody.innerHTML = '';
+      data.forEach(cat => addRow(cat));
+    }
+
+    function addRow(cat = {}) {
+      const isMustHave = cat.type === 'must_have';
+      const subCriteriaText = Array.isArray(cat.sub_criteria)
+        ? cat.sub_criteria.map(c => c.name || c).join(', ')
+        : '';
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><input type="text" value="${cat.name || ''}" oninput="updateAll()"></td>
+        <td><input type="text" value="${cat.description || cat.reason || ''}" oninput="updateAll()"></td>
+        <td><input type="checkbox" ${isMustHave ? 'checked' : ''} onchange="updateAll()"></td>
+        <td><input type="number" value="${cat.weight || 0}" min="0" oninput="updateAll()"></td>
+        <td><input type="text" value="${subCriteriaText}" oninput="updateAll()"></td>
+        <td><input type="checkbox" ${cat.time_sensitive ? 'checked' : ''} onchange="updateAll()"></td>
+        <td><input type="checkbox" ${cat.drives_business_value ? 'checked' : ''} onchange="updateAll()"></td>
+        <td><button class="btn btn-remove" onclick="this.closest('tr').remove(); updateAll()">Remove</button></td>
+      `;
+      tableBody.appendChild(row);
+    }
+
+    function updateAll() {
+      const categories = getCategoriesFromTable();
+      updateChart(categories);
+
+      const titleField = categories.length && categories[0].name ? categories[0].name : 'Job Title';
+      jobTitleDisplay.textContent = titleField;
+      jsonOutput.value = JSON.stringify({ categories }, null, 2);
+
+      const totalWeight = categories.reduce((sum, c) => sum + c.weight, 0);
+      const mustHaveWeight = categories.filter(c => c.type === 'must_have')
+                                       .reduce((sum, c) => sum + c.weight, 0);
+      totalsDisplay.textContent = `Total Weight: ${totalWeight} | Must Have Weight: ${mustHaveWeight}`;
+    }
+
+    function updateChart(categories) {
+      const labels = categories.map(c => c.name);
+      const weights = categories.map(c => c.weight);
+      const total = weights.reduce((sum, val) => sum + val, 0);
+
+      if (chart) chart.destroy();
+
+      chart = new Chart(chartCtx, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data: weights,
+            backgroundColor: labels.map((_, i) => `hsl(${i * 360 / labels.length}, 70%, 60%)`)
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const val = ctx.parsed;
+                  const percent = total ? ((val / total) * 100).toFixed(1) : 0;
+                  return `${ctx.label}: ${val} (${percent}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function getCategoriesFromTable() {
+      const rows = [...tableBody.querySelectorAll('tr')];
+      return rows.map(row => {
+        return {
+          name: row.cells[0].querySelector('input').value,
+          description: row.cells[1].querySelector('input').value,
+          type: row.cells[2].querySelector('input').checked ? 'must_have' : 'nice_to_have',
+          weight: parseFloat(row.cells[3].querySelector('input').value) || 0,
+          sub_criteria: row.cells[4].querySelector('input').value.split(',').map(s => s.trim()).filter(Boolean),
+          time_sensitive: row.cells[5].querySelector('input').checked,
+          drives_business_value: row.cells[6].querySelector('input').checked
+        };
+      });
+    }
+
+    function parseJSON() {
+      try {
+        const data = JSON.parse(jsonInput.value);
+        const categories = Array.isArray(data) ? data : data.categories;
+        if (Array.isArray(categories)) {
+          renderTable(categories);
+          updateAll();
+        }
+      } catch (e) {
+        console.warn('Invalid JSON');
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderTable([]);
+    });
+  </script>
+</body>
+</html>
