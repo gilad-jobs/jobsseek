@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Candidate Evaluation Viewer</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { background-color: #f4f6f8; }
+    .card { margin-bottom: 2rem; }
+    .highlight { color: #0a66c2; font-weight: bold; }
+    .sub { font-size: 0.875em; color: #6c757d; }
+    .chart-title { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    .chart-container { padding: 1rem; background: white; border-radius: 0.5rem; box-shadow: 0 0 0.5rem rgba(0,0,0,0.05); }
+  </style>
+</head>
+<body>
+  <div class="container py-5">
+    <div id="header">
+      <h1 class="mb-1" id="candidateName">Candidate Evaluation Viewer</h1>
+      <h5 class="text-muted mb-4" id="roleTitle"></h5>
+    </div>
+
+    <div id="metadata" class="mb-4"></div>
+
+    <div class="mb-4 d-none">
+      <label for="jsonInput" class="form-label">Paste evaluation JSON here:</label>
+      <textarea id="jsonInput" class="form-control" rows="10"></textarea>
+      <button id="renderBtn" class="btn btn-primary mt-2">Render</button>
+    </div>
+
+    <div id="output"></div>
+
+    <div id="chartContainer" class="row">
+      <div class="col-md-6">
+        <div class="chart-container">
+          <div class="chart-title">Must-Have Criteria</div>
+          <canvas id="mustHaveChart"></canvas>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="chart-container">
+          <div class="chart-title">Advantage Criteria</div>
+          <canvas id="advantageChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function getQueryParam(param) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(param);
+    }
+
+    function renderEvaluation(json) {
+      let data;
+      try { data = JSON.parse(json); } 
+      catch { document.getElementById('output').innerHTML = '<div class="alert alert-danger">Invalid JSON</div>'; return; }
+
+      const categories = data.categories || data;
+      const fitRate = data.fitRate || '?';
+      const potentialScore = data.potentialScore || '?';
+      const successPrediction = data.success_prediction || '?';
+      const basedOn = data.based_on || '';
+      const tone = data.personality_tone || '';
+      const consistency = data.consistency_check?.passed ? 'Passed' : 'Failed';
+      const indicators = data.missing_indicators?.length ? data.missing_indicators.map(m => `<li>${m}</li>`).join('') : '<li>None</li>';
+
+      if (data.candidate_name) document.getElementById("candidateName").textContent = data.candidate_name;
+      if (data.role_name) document.getElementById("roleTitle").textContent = data.role_name;
+
+      const decision = data.decision || '';
+      const decisionBox = decision && `<div class="card mb-4"><div class="card-body"><h5>Decision</h5><p class="highlight">${decision}</p></div></div>`;
+      document.getElementById('metadata').insertAdjacentHTML('afterend', decisionBox || '');
+
+      document.getElementById("metadata").innerHTML = `
+        <div class="row g-3">
+          <div class="col-md-4">
+            <div class="card text-center">
+              <div class="card-body">
+                <strong>Fit Rate:</strong><br>
+                <span class="${fitRate > 80 ? 'text-success fw-bold' : ''}">${fitRate}%</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card text-center">
+              <div class="card-body">
+                <strong>Potential Score:</strong><br>
+                <span class="${potentialScore > 80 ? 'text-success fw-bold' : ''}">${potentialScore}%</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card text-center">
+              <div class="card-body">
+                <strong>Success Prediction:</strong><br>
+                <span class="${successPrediction > 80 ? 'text-success fw-bold' : ''}">${successPrediction}%</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-12">
+            <div class="card">
+              <div class="card-body">
+                <strong>Based On:</strong> <span class="text-muted">${basedOn}</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-body">
+                <strong>Personality Tone:</strong> ${tone}
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-body">
+                <strong>Consistency Check:</strong> <span class="${consistency === 'Passed' ? 'text-success fw-bold' : 'text-danger'}">${consistency}</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-12">
+            <div class="card">
+              <div class="card-body">
+                <strong>Missing Indicators:</strong>
+                <ul class="text-danger">${indicators}</ul>
+              </div>
+            </div>
+          </div>
+        </div>`;
+
+      const summary = data.summary || '';
+      const warnings = data.warnings || [], questions = data.questions || [], interviewQuestions = data.interview_questions || [];
+      const totalWeight = categories.reduce((acc, c) => acc + (+c.weight || 0), 0);
+
+      const rows = categories.map((c, i) => {
+        const subs = (c.sub_criteria || []).map(sub => `<div class="sub">• ${sub.name}: ${sub.score} (${sub.confidence})</div>`).join('');
+        return `<tr>
+          <th scope="row">${i + 1}</th>
+          <td>${c.name}<br/><span class="sub text-${c.type === 'must_have' ? 'danger' : 'success'} fw-bold">${c.type === 'must_have' ? 'MUST' : 'ADVANTAGE'}</span></td>
+          <td>${c.weight}</td>
+          <td>${c.score}</td>
+          <td>${c.confidence || ''}</td>
+          <td>${c.reason || ''}${subs}</td>
+        </tr>`;
+      }).join('');
+
+      const table = `
+        <div class="card">
+          <div class="card-body">
+            <h5 class="card-title">Evaluation Summary</h5>
+            <div class="table-responsive">
+              <table class="table table-bordered">
+                <thead class="table-light">
+                  <tr><th>#</th><th>Name</th><th>Weight</th><th>Score</th><th>Confidence</th><th>Reason & Sub-Criteria</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+                <tfoot class="table-light">
+                  <tr>
+                    <td colspan="2">Total Weight</td><td>${totalWeight}</td>
+                    <td colspan="3">Fit Rate: <span class="highlight">${fitRate}%</span></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>`;
+
+      const extras = [
+        summary && `<div class="card"><div class="card-body"><h5>Summary</h5><p>${summary}</p></div></div>`,
+        warnings.length && `<div class="card"><div class="card-body"><h5>Warnings</h5><ul class="text-danger fw-bold">${warnings.map(w => `<li>${w}</li>`).join('')}</ul></div></div>`,
+        questions.length && `<div class="card"><div class="card-body"><h5>Follow-up Questions</h5><ul>${questions.map(q => `<li>${q}</li>`).join('')}</ul></div></div>`,
+        interviewQuestions.length && `<div class="card"><div class="card-body"><h5>Interview Questions</h5><ul>${interviewQuestions.map(q => `<li>${q}</li>`).join('')}</ul></div></div>`
+      ].filter(Boolean).join('');
+
+      document.getElementById('output').innerHTML = table + extras;
+
+      const mustHave = categories.filter(c => c.type === 'must_have');
+      const advantage = categories.filter(c => c.type !== 'must_have');
+      renderRadarChart('mustHaveChart', mustHave, 'Must-Have Criteria');
+      renderRadarChart('advantageChart', advantage, 'Advantage Criteria');
+    }
+
+    function renderRadarChart(canvasId, categories, title) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      const labels = categories.map(c => c.name);
+      const scores = categories.map(c => c.score);
+      const weights = categories.map(c => c.weight * 100);
+      if (window[canvasId + 'Instance']) window[canvasId + 'Instance'].destroy();
+
+      window[canvasId + 'Instance'] = new Chart(ctx, {
+        type: 'radar',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'Score', data: scores, backgroundColor: 'rgba(54, 162, 235, 0.2)', borderColor: '#0a66c2', borderWidth: 2 },
+            { label: 'Weight (scaled)', data: weights, backgroundColor: 'rgba(255, 206, 86, 0.2)', borderColor: '#ffc107', borderWidth: 2 }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'top' },
+            title: { display: false }
+          },
+          scales: { r: { beginAtZero: true, max: 100 } }
+        }
+      });
+    }
+
+    document.getElementById('renderBtn').addEventListener('click', () => {
+      const raw = document.getElementById('jsonInput').value.trim();
+      renderEvaluation(raw);
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const encoded = getQueryParam('data');
+      if (encoded) {
+        try {
+          const decoded = decodeURIComponent(encoded);
+          document.getElementById('jsonInput').value = decoded;
+          renderEvaluation(decoded);
+        } catch {
+          document.getElementById('output').innerHTML = '<div class="alert alert-danger">Failed to decode URL data</div>';
+        }
+      }
+    });
+  </script>
+</body>
+</html>
