@@ -32,7 +32,7 @@
 
       <!-- Google One Tap -->
       <div id="g_id_onload"
-          data-client_id="570867220288-alj6tv3nfk53ka6d99k84nvlm7p7ugph.apps.googleusercontent.com"
+          data-client_id="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
           data-auto_prompt="false"
           data-callback="handleGoogleLogin"></div>
       <div class="g_id_signin" data-type="standard" data-size="large"></div>
@@ -71,61 +71,96 @@
   <script>
     let googleIdToken = null;
 
+    /* ✅ Try to reuse cached token on page load */
+    document.addEventListener("DOMContentLoaded", () => {
+      const savedToken = sessionStorage.getItem("googleIdToken");
+      const savedTime = parseInt(sessionStorage.getItem("googleIdTokenTime") || "0", 10);
+
+      // Valid for 2 minutes (120000 ms)
+      if (savedToken && Date.now() - savedTime < 120000) {
+        console.log("Reusing cached Google token");
+        googleIdToken = savedToken;
+
+        document.getElementById("loginSection").style.display = "none";
+        document.getElementById("viewerContent").style.display = "block";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const itemId = urlParams.get('item');
+        if (itemId) fetchCandidateFromN8n(itemId);
+      } else {
+        console.log("No valid cached token, showing login");
+      }
+    });
+
     /* ✅ Google Login Callback */
     function handleGoogleLogin(response) {
       const token = response.credential;
       const payload = JSON.parse(atob(token.split('.')[1]));
+
       console.log("Signed in:", payload.email, "| Domain:", payload.hd);
 
-      // Only allow jobsseek.info users
       if (!payload.hd || payload.hd !== "jobsseek.info") {
         alert("Access restricted to jobsseek.info accounts only");
         googleIdToken = null;
+        sessionStorage.removeItem("googleIdToken");
         return;
       }
 
       googleIdToken = token;
+
+      // ✅ Save token in sessionStorage with timestamp
+      sessionStorage.setItem("googleIdToken", token);
+      sessionStorage.setItem("googleIdTokenTime", Date.now().toString());
+
       document.getElementById("loginSection").style.display = "none";
       document.getElementById("viewerContent").style.display = "block";
 
-      // If ?item=123 present, auto-load
       const urlParams = new URLSearchParams(window.location.search);
       const itemId = urlParams.get('item');
       if (itemId) fetchCandidateFromN8n(itemId);
     }
 
     /* ✅ Fetch JSON securely from n8n */
-async function fetchCandidateFromN8n(itemId) {
-  const res = await fetch(`https://jobsseek.app.n8n.cloud/webhook/getCandidate?item=${itemId}`, {
-    headers: { "Authorization": `Bearer ${googleIdToken}` }
-  });
-  let data = await res.json();
-  console.log("N8N RAW RESPONSE:", data);
+    async function fetchCandidateFromN8n(itemId) {
+      if (!googleIdToken) {
+        alert("Please sign in with Google first");
+        return;
+      }
+      const res = await fetch(`https://jobsseek.app.n8n.cloud/webhook/getCandidate?item=${itemId}`, {
+        headers: { "Authorization": `Bearer ${googleIdToken}` }
+      });
+      if (!res.ok) {
+        alert("Access denied");
+        return;
+      }
+      let data = await res.json();
 
-  // ✅ Unwrap array
-  if (Array.isArray(data) && data.length === 1) data = data[0];
+      console.log("N8N RAW RESPONSE:", data);
 
-  // ✅ If still Monday wrapper, parse text field
-  if (data.data && data.data.items) {
-    const text = data.data.items[0].column_values[0].text;
-    try {
-      data = JSON.parse(text);
-    } catch (err) {
-      console.error("Invalid Monday JSON", err);
-      return;
+      // ✅ If array, unwrap first element
+      if (Array.isArray(data) && data.length === 1) {
+        data = data[0];
+      }
+
+      // ✅ If still Monday wrapper, extract .text and parse it
+      if (data.data && data.data.items) {
+        const text = data.data.items[0].column_values[0].text;
+        try {
+          data = JSON.parse(text);
+        } catch (err) {
+          console.error("Invalid JSON from Monday:", err);
+          return;
+        }
+      }
+
+      renderEvaluation(data);
     }
-  }
-
-  renderEvaluation(data);
-}
-
-
 
     /* ✅ Render Candidate Evaluation */
     function renderEvaluation(data) {
-      // Defensive: If data is string, try parse
-      if (typeof data === "string") {
-        try { data = JSON.parse(data); } catch (e) { console.error("Invalid JSON", e); return; }
+      if (!data || !data.candidate_name) {
+        document.getElementById("candidateName").textContent = "Unknown Candidate";
+        return;
       }
 
       const categories = data.categories || [];
@@ -247,7 +282,7 @@ async function fetchCandidateFromN8n(itemId) {
       const ctx = document.getElementById(canvasId).getContext('2d');
       const labels = categories.map(c => c.name);
       const scores = categories.map(c => c.score);
-      const weights = categories.map(c => c.weight * 4); // scale weights approx to 0-100
+      const weights = categories.map(c => c.weight * 4); // scaled
       if (window[canvasId + 'Instance']) window[canvasId + 'Instance'].destroy();
 
       window[canvasId + 'Instance'] = new Chart(ctx, {
