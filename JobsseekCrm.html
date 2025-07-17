@@ -112,7 +112,7 @@
         alert("Please sign in with Google first");
         return;
       }
-      const res = await fetch(`https://YOUR_N8N_DOMAIN/webhook/getCandidate?item=${itemId}`, {
+      const res = await fetch(`https://jobsseek.app.n8n.cloud/webhook/getCandidate?item=${itemId}`, {
         headers: { "Authorization": `Bearer ${googleIdToken}` }
       });
       if (!res.ok) {
