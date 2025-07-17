@@ -28,7 +28,7 @@
     <!-- Google Login Section -->
     <div id="loginSection">
       <h2 class="mb-3">JobsSeekCRM Candidate Viewer</h2>
-      <p class="lead">Sign in with your <strong>jobsseek.info</strong> account to view candidate evaluation.</p>
+      <p class="lead">Sign in with your <strong>jobsseek.info</strong> account to access candidate data.</p>
 
       <!-- Google One Tap -->
       <div id="g_id_onload"
@@ -40,6 +40,19 @@
 
     <!-- Viewer Section (hidden until login) -->
     <div id="viewerContent">
+      <!-- Manual JSON paste (optional) -->
+      <div class="mb-4">
+        <button id="toggleInput" class="btn btn-outline-secondary mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#jsonCollapse" aria-expanded="true" aria-controls="jsonCollapse">
+          Hide JSON Input
+        </button>
+        <div class="collapse show" id="jsonCollapse">
+          <div id="jsonDropZone" class="border p-3 bg-white rounded">
+            <label for="jsonInput" class="form-label">Paste or drag evaluation JSON here:</label>
+            <textarea id="jsonInput" class="form-control" rows="10" placeholder="Drop JSON text here or paste manually..."></textarea>
+          </div>
+        </div>
+      </div>
+
       <div id="header">
         <h1 class="mb-1" id="candidateName">Candidate Evaluation Viewer</h1>
         <h5 class="text-muted mb-4" id="roleTitle"></h5>
@@ -71,50 +84,24 @@
   <script>
     let googleIdToken = null;
 
-    /* ✅ Try to reuse cached token on page load */
-    document.addEventListener("DOMContentLoaded", () => {
-      const savedToken = sessionStorage.getItem("googleIdToken");
-      const savedTime = parseInt(sessionStorage.getItem("googleIdTokenTime") || "0", 10);
-
-      // Valid for 2 minutes (120000 ms)
-      if (savedToken && Date.now() - savedTime < 120000) {
-        console.log("Reusing cached Google token");
-        googleIdToken = savedToken;
-
-        document.getElementById("loginSection").style.display = "none";
-        document.getElementById("viewerContent").style.display = "block";
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const itemId = urlParams.get('item');
-        if (itemId) fetchCandidateFromN8n(itemId);
-      } else {
-        console.log("No valid cached token, showing login");
-      }
-    });
-
     /* ✅ Google Login Callback */
     function handleGoogleLogin(response) {
       const token = response.credential;
       const payload = JSON.parse(atob(token.split('.')[1]));
-
       console.log("Signed in:", payload.email, "| Domain:", payload.hd);
 
+      // Only allow jobsseek.info users
       if (!payload.hd || payload.hd !== "jobsseek.info") {
         alert("Access restricted to jobsseek.info accounts only");
         googleIdToken = null;
-        sessionStorage.removeItem("googleIdToken");
         return;
       }
 
       googleIdToken = token;
-
-      // ✅ Save token in sessionStorage with timestamp
-      sessionStorage.setItem("googleIdToken", token);
-      sessionStorage.setItem("googleIdTokenTime", Date.now().toString());
-
       document.getElementById("loginSection").style.display = "none";
       document.getElementById("viewerContent").style.display = "block";
 
+      // If ?item=123 present, auto-load
       const urlParams = new URLSearchParams(window.location.search);
       const itemId = urlParams.get('item');
       if (itemId) fetchCandidateFromN8n(itemId);
@@ -133,34 +120,21 @@
         alert("Access denied");
         return;
       }
-      let data = await res.json();
 
-      console.log("N8N RAW RESPONSE:", data);
-
-      // ✅ If array, unwrap first element
-      if (Array.isArray(data) && data.length === 1) {
-        data = data[0];
-      }
-
-      // ✅ If still Monday wrapper, extract .text and parse it
-      if (data.data && data.data.items) {
-        const text = data.data.items[0].column_values[0].text;
-        try {
-          data = JSON.parse(text);
-        } catch (err) {
-          console.error("Invalid JSON from Monday:", err);
-          return;
-        }
-      }
-
+      const data = await res.json(); // Already parsed JSON
+      console.log("Fetched candidate data:", data);
       renderEvaluation(data);
     }
 
     /* ✅ Render Candidate Evaluation */
     function renderEvaluation(data) {
-      if (!data || !data.candidate_name) {
-        document.getElementById("candidateName").textContent = "Unknown Candidate";
-        return;
+      // If it comes as a string, parse it
+      if (typeof data === "string") {
+        try { data = JSON.parse(data); } 
+        catch { 
+          document.getElementById('output').innerHTML = '<div class="alert alert-danger">Invalid JSON</div>'; 
+          return; 
+        }
       }
 
       const categories = data.categories || [];
@@ -276,13 +250,17 @@
       const advantage = categories.filter(c => c.type !== 'must_have');
       renderRadarChart('mustHaveChart', mustHave);
       renderRadarChart('advantageChart', advantage);
+
+      const bsCollapse = bootstrap.Collapse.getOrCreateInstance(document.getElementById('jsonCollapse'));
+      bsCollapse.hide();
+      document.getElementById("toggleInput").textContent = "Show JSON Input";
     }
 
     function renderRadarChart(canvasId, categories) {
       const ctx = document.getElementById(canvasId).getContext('2d');
       const labels = categories.map(c => c.name);
       const scores = categories.map(c => c.score);
-      const weights = categories.map(c => c.weight * 4); // scaled
+      const weights = categories.map(c => c.weight * 4); // scale weights approx to 0-100
       if (window[canvasId + 'Instance']) window[canvasId + 'Instance'].destroy();
 
       window[canvasId + 'Instance'] = new Chart(ctx, {
@@ -299,6 +277,15 @@
           plugins: { legend: { position: 'top' }, title: { display: false } },
           scales: { r: { beginAtZero: true, max: 100 } }
         }
+      });
+    }
+
+    // Manual JSON paste support
+    const jsonInput = document.getElementById('jsonInput');
+    if (jsonInput) {
+      jsonInput.addEventListener('input', () => {
+        const raw = jsonInput.value.trim();
+        if (raw) renderEvaluation(raw);
       });
     }
   </script>
