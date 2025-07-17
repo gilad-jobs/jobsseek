@@ -95,27 +95,21 @@
     }
 
     /* ✅ Fetch JSON securely from n8n */
-    async function fetchCandidateFromN8n(itemId) {
-      if (!googleIdToken) {
-        alert("Please sign in with Google first");
-        return;
-      }
-      const res = await fetch(`https://jobsseek.app.n8n.cloud/webhook/getCandidate?item=${itemId}`, {
-        headers: { "Authorization": `Bearer ${googleIdToken}` }
-      });
-      if (!res.ok) {
-        alert("Access denied");
-        return;
-      }
-      let data = await res.json();
+async function fetchCandidateFromN8n(itemId) {
+  const res = await fetch(`https://jobsseek.app.n8n.cloud/webhook/getCandidate?item=${itemId}`, {
+    headers: { "Authorization": `Bearer ${googleIdToken}` }
+  });
+  let data = await res.json();
 
-      // ✅ Unwrap array if necessary
-      if (Array.isArray(data) && data.length === 1) {
-        data = data[0];
-      }
+  console.log("Response from n8n:", data); // ✅ DEBUG
 
-      renderEvaluation(data);
-    }
+  if (Array.isArray(data) && data.length === 1) {
+    data = data[0];
+  }
+
+  renderEvaluation(data);
+}
+
 
     /* ✅ Render Candidate Evaluation */
     function renderEvaluation(data) {
