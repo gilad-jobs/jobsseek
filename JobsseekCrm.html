@@ -100,15 +100,25 @@ async function fetchCandidateFromN8n(itemId) {
     headers: { "Authorization": `Bearer ${googleIdToken}` }
   });
   let data = await res.json();
+  console.log("N8N RAW RESPONSE:", data);
 
-  console.log("Response from n8n:", data); // ✅ DEBUG
+  // ✅ Unwrap array
+  if (Array.isArray(data) && data.length === 1) data = data[0];
 
-  if (Array.isArray(data) && data.length === 1) {
-    data = data[0];
+  // ✅ If still Monday wrapper, parse text field
+  if (data.data && data.data.items) {
+    const text = data.data.items[0].column_values[0].text;
+    try {
+      data = JSON.parse(text);
+    } catch (err) {
+      console.error("Invalid Monday JSON", err);
+      return;
+    }
   }
 
   renderEvaluation(data);
 }
+
 
 
     /* ✅ Render Candidate Evaluation */
