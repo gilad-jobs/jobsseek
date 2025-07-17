@@ -28,11 +28,11 @@
     <!-- Google Login Section -->
     <div id="loginSection">
       <h2 class="mb-3">JobsSeekCRM Candidate Viewer</h2>
-      <p class="lead">Sign in with your <strong>jobsseek.info</strong> account to access candidate data.</p>
+      <p class="lead">Sign in with your <strong>jobsseek.info</strong> account to view candidate evaluation.</p>
 
       <!-- Google One Tap -->
       <div id="g_id_onload"
-          data-client_id="570867220288-alj6tv3nfk53ka6d99k84nvlm7p7ugph.apps.googleusercontent.com"
+          data-client_id="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
           data-auto_prompt="false"
           data-callback="handleGoogleLogin"></div>
       <div class="g_id_signin" data-type="standard" data-size="large"></div>
@@ -40,18 +40,6 @@
 
     <!-- Viewer Section (hidden until login) -->
     <div id="viewerContent">
-      <div class="mb-4">
-        <button id="toggleInput" class="btn btn-outline-secondary mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#jsonCollapse" aria-expanded="true" aria-controls="jsonCollapse">
-          Hide JSON Input
-        </button>
-        <div class="collapse show" id="jsonCollapse">
-          <div id="jsonDropZone" class="border p-3 bg-white rounded">
-            <label for="jsonInput" class="form-label">Paste or drag evaluation JSON here:</label>
-            <textarea id="jsonInput" class="form-control" rows="10" placeholder="Drop JSON text here or paste manually..."></textarea>
-          </div>
-        </div>
-      </div>
-
       <div id="header">
         <h1 class="mb-1" id="candidateName">Candidate Evaluation Viewer</h1>
         <h5 class="text-muted mb-4" id="roleTitle"></h5>
@@ -119,18 +107,21 @@
         alert("Access denied");
         return;
       }
-      const data = await res.json();
-      renderEvaluation(JSON.stringify(data));
+      let data = await res.json();
+
+      // ✅ Unwrap array if necessary
+      if (Array.isArray(data) && data.length === 1) {
+        data = data[0];
+      }
+
+      renderEvaluation(data);
     }
 
     /* ✅ Render Candidate Evaluation */
-    function renderEvaluation(json) {
-      let data;
-      try { 
-        data = JSON.parse(json); 
-      } catch { 
-        document.getElementById('output').innerHTML = '<div class="alert alert-danger">Invalid JSON</div>'; 
-        return; 
+    function renderEvaluation(data) {
+      // Defensive: If data is string, try parse
+      if (typeof data === "string") {
+        try { data = JSON.parse(data); } catch (e) { console.error("Invalid JSON", e); return; }
       }
 
       const categories = data.categories || [];
@@ -246,10 +237,6 @@
       const advantage = categories.filter(c => c.type !== 'must_have');
       renderRadarChart('mustHaveChart', mustHave);
       renderRadarChart('advantageChart', advantage);
-
-      const bsCollapse = bootstrap.Collapse.getOrCreateInstance(document.getElementById('jsonCollapse'));
-      bsCollapse.hide();
-      document.getElementById("toggleInput").textContent = "Show JSON Input";
     }
 
     function renderRadarChart(canvasId, categories) {
@@ -273,15 +260,6 @@
           plugins: { legend: { position: 'top' }, title: { display: false } },
           scales: { r: { beginAtZero: true, max: 100 } }
         }
-      });
-    }
-
-    // Allow manual JSON paste
-    const jsonInput = document.getElementById('jsonInput');
-    if (jsonInput) {
-      jsonInput.addEventListener('input', () => {
-        const raw = jsonInput.value.trim();
-        if (raw) renderEvaluation(raw);
       });
     }
   </script>
